@@ -7,7 +7,7 @@ from aiogram.types import ReplyKeyboardRemove, ReplyKeyboardMarkup, ReplyKeyboar
     InlineKeyboardMarkup, InlineKeyboardButton
 import logging
 import os
-from db_con import db1
+# from db_con import db1
 import texts
 
 TOKEN = '1821787822:AAEFr22t2_sfYU1Ms-IMLooSMp_5BnOcYEk'
