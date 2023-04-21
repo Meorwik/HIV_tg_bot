@@ -7,21 +7,27 @@ from aiogram.types import ReplyKeyboardRemove, ReplyKeyboardMarkup, ReplyKeyboar
     InlineKeyboardMarkup, InlineKeyboardButton
 import logging
 import os
-# from db_con import db1
+from db_api import PostgresDataBaseManager, db_connection_config
 import texts
 
 TOKEN = '1821787822:AAEFr22t2_sfYU1Ms-IMLooSMp_5BnOcYEk'
 
 storage = MemoryStorage()
 
+ADMINS = [912239061]
+db = PostgresDataBaseManager(db_connection_config)
 bot = Bot(TOKEN)
 dp = Dispatcher(bot, storage=storage)
 
 logging.basicConfig(level=logging.INFO)
 
-
 async def on_startup(_):
     print('bot: Бот вышел в онлайн!')
+    await dp.bot.set_my_commands(
+        [
+            types.BotCommand("start", "Команда start для запуска бота")
+        ]
+    )
 
 
 class test_language(StatesGroup):
@@ -51,49 +57,14 @@ class the_big_test(StatesGroup):
     q20 = State()
 
 
-# @dp.message_handler(commands='start')
-# async def start(message: types.Message):
-#     print(message.from_user.username)
-#     if not message.from_user.username:
-#         await message.answer('Ваш профиль не имеет логина. Указать его можно в настройках.\n\nИнструкция: https://inetfishki.ru/telegram/kak-uznat-dobavit-pomenyat-login.html#i-4')
-#     else:
-#         rus_btn = InlineKeyboardButton('Русский', callback_data='rus')
-#         kz_btn = InlineKeyboardButton('Қазақша', callback_data='kz')
-#         language = InlineKeyboardMarkup(row_width=2).add(rus_btn).add(kz_btn)
-#         await message.answer('Здравствуйте!\nЯ – бот, который поможет Вам оценить риск инфицирования ВИЧ и понять, нужны ли услуги по профилактике ВИЧ. \nВыберите язык, чтобы продолжить:', reply_markup=language)
-
-
-# @dp.callback_query_handler(lambda c: c.data == 'rus')
-# async def menu(callback_query: types.CallbackQuery):
-#     await bot.answer_callback_query(callback_query.id)
-#     await callback_query.message.delete()
-#     menu_btn = InlineKeyboardButton('Начать!', callback_data='menu')
-#     menu = InlineKeyboardMarkup(row_width=2).add(menu_btn)
-#     db1.user_check(callback_query.from_user.id, callback_query.from_user.username, 'rus')
-#     await bot.send_message(callback_query.from_user.id, 'Отлично! Выбран русский язык.\n'
-#                                                         'Нажмите "Начать!" для перехода в меню.',
-#                            reply_markup=menu)
-#
-#
-# @dp.callback_query_handler(lambda c: c.data == 'kz')
-# async def menu(callback_query: types.CallbackQuery):
-#     await bot.answer_callback_query(callback_query.id)
-#     await callback_query.message.delete()
-#     menu_btn = InlineKeyboardButton('Начать!', callback_data='menu')
-#     menu = InlineKeyboardMarkup(row_width=2).add(menu_btn)
-#     db1.user_check(callback_query.from_user.id, callback_query.from_user.username, 'kz')
-#     await bot.send_message(callback_query.from_user.id, 'Отлично! Выбран казахский язык.\n'
-#                                                         'Нажмите "Начать!" для перехода в меню.',
-#                            reply_markup=menu)
-
-@dp.message_handler(commands='start')
+@dp.message_handler(commands='start', state="*")
 async def start(message: types.Message):
     print(message.from_user.username)
     if not message.from_user.username:
         await message.answer('Ваш профиль не имеет логина. Указать его можно в настройках.\n\n'
                              'Инструкция: https://inetfishki.ru/telegram/kak-uznat-dobavit-pomenyat-login.html#i-4')
     else:
-        # db1.user_check(message.from_user.id, message.from_user.username)
+        db.check_user(message.from_user)
         start_btn = InlineKeyboardButton('Начать!', callback_data='menu')
         start_kb = InlineKeyboardMarkup(row_width=2).add(start_btn)
         await message.answer('Здравствуйте!\n'
@@ -109,13 +80,22 @@ async def menu(callback_query: types.CallbackQuery):
     await callback_query.message.delete()
     test_btn = KeyboardButton('Тест на оценку риска инфицирования ВИЧ 📋')
     files_btn = KeyboardButton('Всё о доконтактной профилактике ВИЧ 📚')
+    admin_btn = KeyboardButton('Получить базу пользователей')
     free_test_btn = KeyboardButton('Заказать бесплатный тест на ВИЧ 💊')
     ask_btn = KeyboardButton('Расскажите партнёру о важности тестирования анонимно 🙋‍♀')
     project_news_btn = KeyboardButton('Новости проекта 📌')
     social_medias_btn = KeyboardButton('Мы в социальных сетях 🔈')
     menu_kb = ReplyKeyboardMarkup(resize_keyboard=True).add(test_btn).add(files_btn).add(free_test_btn) \
         .add(ask_btn).add(project_news_btn, social_medias_btn)
+    if callback_query.from_user.id in ADMINS:
+        menu_kb.add(admin_btn)
     await bot.send_message(callback_query.from_user.id, 'Меню', reply_markup=menu_kb)
+
+
+@dp.message_handler(lambda message: message.from_user.id in ADMINS, text="Получить базу пользователей")
+async def test(callback_query: types.CallbackQuery):
+    data = db.get_all_users()
+    await callback_query.answer(data)
 
 
 @dp.message_handler(text="Всё о доконтактной профилактике ВИЧ 📚")
@@ -128,27 +108,30 @@ async def test(callback_query: types.CallbackQuery):
 
 @dp.message_handler(text="Заказать бесплатный тест на ВИЧ 💊")
 async def files(message: types.Message):
-    await message.answer('Ссылка:\n https://hivtest.kz/')
+    btn = InlineKeyboardButton("Перейти", url="https://hivtest.kz/")
+    await message.answer('Заказать бесплатный тест', reply_markup=InlineKeyboardMarkup().add(btn))
 
 
 @dp.message_handler(text="Расскажите партнёру о важности тестирования анонимно 🙋‍♀")
 async def files(message: types.Message):
-    await message.answer('Ссылка:\n https://sms.icapapps.kz/ru/')
+    btn = InlineKeyboardButton("Перейти", url="https://sms.icapapps.kz/ru/")
+    await message.answer('Расскажите партнёру о важности тестирования анонимно 🙋‍♀', reply_markup=InlineKeyboardMarkup().add(btn))
 
 
 @dp.message_handler(text="Новости проекта 📌")
 async def files(message: types.Message):
-    await message.answer('О ВИЧ рассказывают подростки'
-                         '\n\nСсылка:\n https://www.facebook.com/AMECAlmaty/posts/313432297466945')
-    await message.answer('Доконтактная профилактика: Новый способ профилактики ВИЧ в Казахстане\n\n'
-                         'Ссылка:\n https://www.the-village-kz.com/village/city/news-city/19155-dokontaktnaya-'
-                         'profilaktika-novyy-sposob-profilaktiki-vich-v-kazahstane')
+    btn1 = InlineKeyboardButton("Перейти", url="https://www.facebook.com/AMECAlmaty/posts/313432297466945")
+    btn2 = InlineKeyboardButton("Перейти", url="https://www.the-village-kz.com/village/city/news-city/19155-dokontaktnaya-profilaktika-novyy-sposob-profilaktiki-vich-v-kazahstane")
+    await message.answer('О ВИЧ рассказывают подростки', reply_markup=InlineKeyboardMarkup().add(btn1))
+    await message.answer('Доконтактная профилактика: Новый способ профилактики ВИЧ в Казахстане', reply_markup=InlineKeyboardMarkup().add(btn2))
 
 
 @dp.message_handler(text="Мы в социальных сетях 🔈")
 async def files(message: types.Message):
-    await message.answer('Facebook страница проекта\n\nhttps://www.facebook.com/AMECAlmaty')
-    await message.answer('Instagram страница проекта\n\nhttps://www.instagram.com/amec_almaty/')
+    btn1 = InlineKeyboardButton("Перейти", url="https://www.facebook.com/AMECAlmaty")
+    btn2 = InlineKeyboardButton("Перейти", url="https://www.instagram.com/amec_almaty/")
+    await message.answer('Facebook страница проекта', reply_markup=InlineKeyboardMarkup().add(btn1))
+    await message.answer('Instagram страница проекта', reply_markup=InlineKeyboardMarkup().add(btn2))
 
 
 @dp.message_handler(content_types=["document"])
